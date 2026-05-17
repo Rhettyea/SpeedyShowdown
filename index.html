@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sonic Battle Grounds</title>
+    <style>
+        body {
+            margin: 0;
+            background: #111;
+            color: white;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        canvas {
+            border: 4px solid #0055ff;
+            box-shadow: 0 0 20px #0055ff;
+            background: #222;
+        }
+        #codeMenu {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 5px;
+        }
+        input, button {
+            padding: 8px;
+            background: #333;
+            border: 2px solid #555;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        input:focus { border-color: #0055ff; outline: none; }
+    </style>
+</head>
+<body>
+
+<div id="codeMenu">
+    <input type="text" id="adminCode" placeholder="Enter Code...">
+    <button onclick="checkAdminCode()">Submit</button>
+</div>
+
+<canvas id="gameCanvas" width="1000" height="600"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// --- GAME STATES ---
+// "MENU", "CONTROLS", "CUTSCENE", "ADMIN_MENU", "PLAYING"
+let gameState = "MENU"; 
+
+// --- GAME VARIABLES ---
+let players = [];
+let boss = null;
+let bossTimer = 120; // 2 minutes (120 seconds)
+let lastTime = Date.now();
+let collectedEmeralds = 0;
+
+// --- BUTTONS SETUP ---
+const buttons = {
+    play: { x: 400, y: 200, w: 200, h: 50, text: "PLAY" },
+    controls: { x: 400, y: 280, w: 200, h: 50, text: "CONTROLS" },
+    backToMenu: { x: 20, y: 20, w: 140, h: 40, text: "MAIN MENU" },
+    hyperSonic: { x: 300, y: 250, w: 180, h: 50, text: "HYPER SONIC" },
+    darkSonic: { x: 520, y: 250, w: 180, h: 50, text: "DARK SONIC" }
+};
+
+// --- CHARACTER TEMPLATES ---
+const CHARACTERS = {
+    SONIC: { name: "Sonic", color: "#0055ff", speed: 6, maxHp: 100, forms: ["Normal", "Super"] },
+    TAILS: { name: "Tails", color: "#ffcc00", speed: 5, maxHp: 90, forms: ["Normal"] },
+    SHADOW: { name: "Shadow", color: "#333333", speed: 6, maxHp: 105, forms: ["Normal", "Super"] },
+    HYPER: { name: "Hyper Sonic", color: "#ffffff", speed: 10, maxHp: 200, forms: ["Hyper"] },
+    DARK: { name: "Dark Sonic", color: "#111122", speed: 8, maxHp: 150, forms: ["Dark"] }
+};
+
+// Current Active Character Setup
+let currentCharacter = CHARACTERS.SONIC;
+let currentFormIndex = 0;
+
+class Entity {
+    constructor(x, y, stats, isPlayer = false) {
+        this.x = x;
+        this.y = y;
+        this.w = 40;
+        this.h = 60;
+        this.stats = stats;
+        this.hp = stats.maxHp;
+        this.speed = stats.speed;
+        this.color = stats.color;
+        this.isPlayer = isPlayer;
+        this.isDead = false;
+        
+        // State actions
+        this.state = "IDLE"; // IDLE, RUNNING, SPINNING, PUNCHING
+        this.animFrame = 0;
+        this.dir = 1; // 1 = right, -1 = left
+    }
+
+    update() {
+        if (this.isDead) return;
+
+        // Animate pseudo-sprites
+        this.animFrame += 0.1;
+
+        if (this.isPlayer) {
+            this.handlePlayerMovement();
+        } else {
+            this.handleAIMovement();
+        }
+
+        // Keep inside boundaries
+        this.x = Math.max(0, Math.min(canvas.width - this.w, this.x));
+        this.y = Math.max(0, Math.min(canvas.height - this.h, this.y));
+    }
+
+    handlePlayerMovement() {
+        this.state = "IDLE";
+        let moveSpeed = this.speed;
+
+        if (keys['Shift']) { moveSpeed *= 1.5; this.state = "SPRINT"; }
+        if (keys['a'] || keys['ArrowLeft']) { this.x -= moveSpeed; this.dir = -1; this.state = "RUNNING"; }
+        if (keys['d'] || keys['ArrowRight']) { this.x += moveSpeed; this.dir = 1; this.state = "RUNNING"; }
+        if (keys['w'] || keys['ArrowUp']) { this.y -= moveSpeed; this.state = "RUNNING"; }
+        if (keys['s'] || keys['ArrowDown']) { this.y += moveSpeed; this.state = "RUNNING"; }
+        if (keys['f']) { this.state = "PUNCH"; this.attack(); }
+        if (keys['q']) { this.state = "SPINDASH"; moveSpeed *= 2; if(this.dir === 1) this.x += 4; else this.x -= 4; }
+    }
+
+    handleAIMovement() {
+        // Find closest target (player or another AI)
+        let closest = null;
+        let minDist = 999999;
+
+        players.forEach(p => {
+            if (p !== this && !p.isDead) {
+                let dist = Math.hypot(p.x - this.x, p.y - this.y);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closest = p;
+                }
+            }
+        });
+
+        if (closest) {
+            this.state = "RUNNING";
+            if (this.x < closest.x) { this.x += this.speed * 0.6; this.dir = 1; }
+            else { this.x -= this.speed * 0.6; this.dir = -1; }
+
+            if (this.y < closest.y) this.y += this.speed * 0.6;
+            else this.y -= this.speed * 0.6;
+
+            // Attack condition
+            if (minDist < 50 && Math.random() < 0.05) {
+                this.state = "PUNCH";
+                closest.takeDamage(5);
+            }
+        }
+    }
+
+    attack() {
+        players.forEach(p => {
+            if (p !== this && !p.isDead) {
+                let dist = Math.hypot(p.x - this.x, p.y - this.y);
+                if (dist < 60) {
+                    p.takeDamage(10);
+                }
+            }
+        });
+        if (boss && !boss.isDead) {
+            let dist = Math.hypot(boss.x - this.x, boss.y - this.y);
+            if (dist < 80) boss.takeDamage(15);
+        }
+    }
+
+    takeDamage(amount) {
+        this.hp -= amount;
+        if (this.hp <= 0) {
+            this.hp = 0;
+            this.isDead = true;
+            setTimeout(() => this.respawn(), 3000); // Respawn after 3 seconds
+        }
+    }
+
+    respawn() {
+        this.hp = this.stats.maxHp;
+        this.x = Math.random() * (canvas.width - 100) + 50;
+        this.y = Math.random() * (canvas.height - 100) + 50;
+        this.isDead = false;
+        this.state = "IDLE";
+    }
+
+    draw() {
+        if (this.isDead) {
+            ctx.fillStyle = "rgba(255,0,0,0.4)";
+            ctx.fillRect(this.x, this.y + this.h - 10, this.w, 10);
+            return;
+        }
+
+        ctx.fillStyle = this.color;
+        
+        // Professional-style procedural shape changing based on action animations
+        if (this.state === "SPINDASH") {
+            ctx.beginPath();
+            let radius = this.w / 2 + Math.sin(this.animFrame) * 3;
+            ctx.arc(this.x + this.w/2, this.y + this.h/2, radius, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (this.state === "PUNCH") {
+            ctx.fillRect(this.x, this.y, this.w, this.h);
+            ctx.fillStyle = "#white";
+            ctx.fillRect(this.x + (this.dir * 25), this.y + 20, 15, 10); // Fist extended out
+        } else {
+            // Default character body drawing
+            ctx.fillRect(this.x, this.y, this.w, this.h);
+            // Bobbing animation for head running
+            let bob = (this.state === "RUNNING" || this.state === "SPRINT") ? Math.sin(this.animFrame) * 4 : 0;
+            ctx.fillStyle = "#f3d3b2"; // Face color area placeholder
+            ctx.fillRect(this.x + (this.dir === 1 ? 20 : 5), this.y + 10 + bob, 15, 15);
+        }
+
+        // Aura effect for Super or Admin forms
+        if (this.stats.forms && (this.stats.forms[currentFormIndex] === "Super" || this.stats.name.includes("Sonic"))) {
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 3;
+            ctx.strokeRect(this.x - 5, this.y - 5, this.w + 10, this.h + 10);
+        }
+
+        // Health Bar UI above entity
+        ctx.fillStyle = "red";
+        ctx.fillRect(this.x, this.y - 12, this.w, 6);
+        ctx.fillStyle = "lime";
+        ctx.fillRect(this.x, this.y - 12, (this.hp / this.stats.maxHp) * this.w, 6);
+    }
+}
+
+// --- EGGMAN BOSS CLASS ---
+class EggmanBoss {
+    constructor() {
+        this.x = canvas.width / 2 - 50;
+        this.y = 80;
+        this.w = 90;
+        this.h = 90;
+        this.hp = 500;
+        this.maxHp = 500;
+        this.isDead = false;
+        this.speed = 3;
+        this.dir = 1;
+    }
+    update() {
+        if (this.isDead) return;
+        this.x += this.speed * this.dir;
+        if (this.x <= 50 || this.x >= canvas.width - 150) this.dir *= -1;
+
+        // Attack randomly downwards
+        if (Math.random() < 0.02) {
+            players.forEach(p => {
+                if (!p.isDead && Math.abs(p.x - this.x) < 100) {
+                    p.takeDamage(20);
+                }
+            });
+        }
+    }
+    draw() {
+        if (this.isDead) return;
+        ctx.fillStyle = "red";
+        ctx.fillRect(this.x, this.y, this.w, this.h);
+        ctx.fillStyle = "orange"; // Eggmobile base
+        ctx.fillRect(this.x - 15, this.y + this.h - 20, this.w + 30, 20);
+
+        // Boss Health UI Bar
+        ctx.fillStyle = "black";
+        ctx.fillRect(200, 20, 600, 20);
+        ctx.fillStyle = "purple";
+        ctx.fillRect(200, 20, (this.hp / this.maxHp) * 600, 20);
+    }
+    takeDamage(amount) {
+        this.hp -= amount;
+        if (this.hp <= 0) {
+            this.isDead = true;
+            collectedEmeralds++;
+            boss = null;
+            // Provide Chaos Emerald stat buffs instantly to player entity
+            players[0].stats.maxHp += 25;
+            players[0].speed += 1;
+            players[0].hp = players[0].stats.maxHp; 
+        }
+    }
+}
+
+// --- KEYBOARD CONTROLS LISTENERS ---
+const keys = {};
+window.addEventListener('keydown', e => keys[e.key] = true);
+window.addEventListener('keyup', e => keys[e.key] = false);
+
+// Change Forms Toggle Key Action
+window.addEventListener('keydown', e => {
+    if (e.key.toLowerCase() === 'e' && gameState === "PLAYING") {
+        if(currentCharacter.forms.length > 1) {
+            currentFormIndex = (currentFormIndex + 1) % currentCharacter.forms.length;
+            players[0].color = currentFormIndex === 1 ? "#ffee00" : currentCharacter.color; // super shift golden yellow
+        }
+    }
+});
+
+// --- CODE CHECKER FOR ADMIN ACCESS ---
+function checkAdminCode() {
+    let inputCode = document.getElementById('adminCode').value;
+    if (inputCode === "9217") {
+        document.getElementById('codeMenu').style.display = 'none';
+        startCutscene();
+    } else {
+        alert("Incorrect Admin Secret Code!");
+    }
+}
+
+// --- SCENE SEQUENCES ---
+let cutsceneTimer = 0;
+function startCutscene() {
+    gameState = "CUTSCENE";
+    cutsceneTimer = 0;
+}
+
+function initGameSession() {
+    players = [];
+    // Spawn core user player entity
+    players.push(new Entity(100, 300, currentCharacter, true));
+
+    // Spawn 9 Dynamic Fighting AI models
+    let aiPool = [CHARACTERS.SONIC, CHARACTERS.TAILS, CHARACTERS.SHADOW];
+    for(let i=0; i<9; i++) {
+        let randomChar = aiPool[Math.floor(Math.random() * aiPool.length)];
+        players.push(new Entity(Math.random() * 700 + 200, Math.random() * 400 + 100, randomChar, false));
+    }
+    bossTimer = 120;
+    boss = null;
+}
+
+// --- RENDER TEXT HELPER ---
+function drawButton(btn) {
+    ctx.fillStyle = "#444";
+    ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
+    ctx.strokeStyle = "#0055ff";
+    ctx.strokeRect(btn.x, btn.y, btn.w, btn.h);
+    ctx.fillStyle = "white";
+    ctx.font = "16px 'Courier New'";
+    ctx.textAlign = "center";
+    ctx.fillText(btn.text, btn.x + btn.w/2, btn.y + btn.h/2 + 6);
+}
+
+// --- MAIN INTERACTION EVENT CLICK MOUSE ---
+canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    if (gameState === "MENU") {
+        if (mx > buttons.play.x && mx < buttons.play.x + buttons.play.w && my > buttons.play.y && my < buttons.play.y + buttons.play.h) {
+            initGameSession();
+            gameState = "PLAYING";
+        }
+        if (mx > buttons.controls.x && mx < buttons.controls.x + buttons.controls.w && my > buttons.controls.y && my < buttons.controls.y + buttons.controls.h) {
+            gameState = "CONTROLS";
+        }
+    }
+    else if (gameState === "CONTROLS" || gameState === "ADMIN_MENU" || gameState === "PLAYING") {
+        // Back buttons functionality check
+        if (mx > buttons.backToMenu.x && mx < buttons.backToMenu.x + buttons.backToMenu.w && my > buttons.backToMenu.y && my < buttons.backToMenu.y + buttons.backToMenu.h) {
+            document.getElementById('codeMenu').style.display = 'flex';
+            gameState = "MENU";
+        }
+        
+        if (gameState === "ADMIN_MENU") {
+            if (mx > buttons.hyperSonic.x && mx < buttons.hyperSonic.x + buttons.hyperSonic.w && my > buttons.hyperSonic.y && my < buttons.hyperSonic.y + buttons.hyperSonic.h) {
+                currentCharacter = CHARACTERS.HYPER; initGameSession(); gameState = "PLAYING";
+            }
+            if (mx > buttons.darkSonic.x && mx < buttons.darkSonic.x + buttons.darkSonic.w && my > buttons.darkSonic.y && my < buttons.darkSonic.y + buttons.darkSonic.y) {
+                currentCharacter = CHARACTERS.DARK; initGameSession(); gameState = "PLAYING";
+            }
+        }
+    }
+});
+
+// --- CORE ENGINE LOOP ---
+function gameLoop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let now = Date.now();
+    let dt = (now - lastTime) / 1000;
+    lastTime = now;
+
+    if (gameState === "MENU") {
+        ctx.fillStyle = "#0055ff";
+        ctx.font = "40px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("SONIC BATTLE GROUNDS", canvas.width/2, 100);
+        drawButton(buttons.play);
+        drawButton(buttons.controls);
+    } 
+    
+    else if (gameState === "CONTROLS") {
+        ctx.fillStyle = "white";
+        ctx.font = "20px 'Courier New'";
+        ctx.textAlign = "center";
+        ctx.fillText("CONTROLS LIST", canvas.width/2, 100);
+        ctx.fillText("Move: W, A, S, D / Arrow Keys", canvas.width/2, 180);
+        ctx.fillText("Punch Attack: F key", canvas.width/2, 220);
+        ctx.fillText("Spin Dash Run: Q key", canvas.width/2, 260);
+        ctx.fillText("Sprint: Shift Key held down", canvas.width/2, 300);
+        ctx.fillText("Switch Forms: E Key (Sonic/Shadow only)", canvas.width/2, 340);
+        drawButton(buttons.backToMenu);
+    } 
+    
+    else if (gameState === "CUTSCENE") {
+        cutsceneTimer += 1;
+        ctx.fillStyle = "black";
+        ctx.fillRect(0,0,canvas.width, canvas.height);
+        
+        // Draw dramatic floor walking setup area
+        ctx.fillStyle = "#222";
+        ctx.fillRect(0, 450, canvas.width, 150);
+
+        // Sonic walking pseudo animations frame calculations
+        let walkX = cutsceneTimer * 2;
+        ctx.fillStyle = "#0055ff";
+        ctx.fillRect(walkX, 390, 40, 60);
+        
+        // Halo ring circle graphic item overhead
+        ctx.strokeStyle = "yellow";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(walkX + 20, 370, 15, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = "white";
+        ctx.font = "20px Arial";
+        ctx.fillText("Sonic passes on to the Admin Sanctum...", canvas.width/2, 150);
+
+        if (walkX > canvas.width) {
+            gameState = "ADMIN_MENU";
+        }
+    } 
+    
+    else if (gameState === "ADMIN_MENU") {
+        ctx.fillStyle = "#ff00ff";
+        ctx.font = "30px 'Courier New'";
+        ctx.textAlign = "center";
+        ctx.fillText("SECRET ADMIN SELECTION CHARACTER MENU", canvas.width/2, 100);
+        drawButton(buttons.hyperSonic);
+        drawButton(buttons.darkSonic);
+        drawButton(buttons.backToMenu);
+    } 
+    
+    else if (gameState === "PLAYING") {
+        // Handle global loop timer down tracking
+        bossTimer -= dt;
+        if(bossTimer <= 0 && !boss) {
+            boss = new EggmanBoss();
+            bossTimer = 120; // reset for next cyclic wave schedule 
+        }
+
+        // Draw HUD Elements text details 
+        ctx.fillStyle = "white";
+        ctx.font = "14px 'Courier New'";
+        ctx.textAlign = "left";
+        ctx.fillText(`Character Selected: ${currentCharacter.name} [Form index toggle: E]`, 180, 30);
+        ctx.fillText(`Chaos Emeralds Kept: ${collectedEmeralds}`, 180, 50);
+        ctx.fillText(`Next Dr. Eggman Boss Drop Invasion in: ${Math.max(0, Math.floor(bossTimer))}s`, 550, 550);
+
+        drawButton(buttons.backToMenu);
+
+        // Run Entity Loops updates safely
+        if(boss) {
+            boss.update();
+            boss.draw();
+        }
+
+        players.forEach(p => {
+            p.update();
+            p.draw();
+        });
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+// Fire up engine frames render processes 
+gameLoop();
+</script>
+
+</body>
+</html>
