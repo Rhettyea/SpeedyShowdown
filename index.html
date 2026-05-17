@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SpeedyShowdown: Ultimate</title>
+    <title>Sonic Battle Grounds: Ultimate</title>
     <style>
         body {
             margin: 0;
@@ -131,7 +131,6 @@ let gameState = "MENU";
 let gameMode = "BATTLEGROUND"; 
 let currentStoryLevel = 1;
 let totalLevelsInWave = 4;
-let storyEnemiesRemaining = 0;
 
 let players = [];
 let particles = [];
@@ -144,10 +143,21 @@ let screenShake = 0;
 const GRAVITY = 0.6;
 const FLOOR_Y = 530;
 
-// --- CONTROLS ---
+// --- CONTROLS FIX: SEAMLESS DIRECT EVENT STATE TRACKING ---
 const keys = {};
-window.addEventListener('keydown', e => keys[e.key] = true);
-window.addEventListener('keyup', e => keys[e.key] = false);
+window.addEventListener('keydown', e => {
+    let k = e.key.toLowerCase();
+    keys[k] = true;
+    keys[e.key] = true;
+});
+window.addEventListener('keyup', e => {
+    let k = e.key.toLowerCase();
+    keys[k] = false;
+    keys[e.key] = false;
+});
+window.addEventListener('blur', () => {
+    for (let k in keys) keys[k] = false;
+});
 
 // --- MOBILE CONTROLS SYSTEM ---
 const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
@@ -156,8 +166,8 @@ if (isMobile) {
 }
 function setupMobileButton(elementId, keyName) {
     const btn = document.getElementById(elementId);
-    btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[keyName] = true; });
-    btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[keyName] = false; });
+    btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[keyName.toLowerCase()] = true; keys[keyName] = true; });
+    btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[keyName.toLowerCase()] = false; keys[keyName] = false; });
 }
 setupMobileButton('btnLeft', 'ArrowLeft');
 setupMobileButton('btnRight', 'ArrowRight');
@@ -278,20 +288,25 @@ class Fighter {
         let acc = this.charData.speed * 0.18;
         if (this.form !== "Normal") acc *= 1.4;
 
-        if (keys['a'] || keys['ArrowLeft']) {
+        // Directly evaluating variables to handle overlapping input conditions cleanly
+        let leftPressed = keys['a'] || keys['arrowleft'];
+        let rightPressed = keys['d'] || keys['arrowright'];
+        let jumpPressed = keys['w'] || keys['arrowup'];
+
+        if (leftPressed) {
             this.vx -= acc; this.dir = -1;
             if (this.vy === 0) this.state = "RUN";
         }
-        if (keys['d'] || keys['ArrowRight']) {
+        if (rightPressed) {
             this.vx += acc; this.dir = 1;
             if (this.vy === 0) this.state = "RUN";
         }
-        if ((keys['w'] || keys['ArrowUp']) && this.vy === 0) {
+        if (jumpPressed && this.vy === 0) {
             this.vy = this.form !== "Normal" ? this.charData.jump - 2 : this.charData.jump; 
             this.state = "JUMP";
             spawnBurst(this.x+this.w/2, this.y+this.h, "#ffffff", 5);
         }
-        if (!keys['a'] && !keys['d'] && !keys['ArrowLeft'] && !keys['ArrowRight'] && this.vy === 0) {
+        if (!leftPressed && !rightPressed && this.vy === 0) {
             if (this.state !== "PUNCH" && this.state !== "SPINDASH") this.state = "IDLE";
         }
         if (keys['q']) {
@@ -343,7 +358,7 @@ class Fighter {
                 if (distance < reach) {
                     let damage = this.state === "SPINDASH" ? 14 : 8;
                     if (this.charData.name === "Knuckles" && this.state === "PUNCH") damage = 15; 
-                    if (this.charData.name === "Metal Sonic") damage = 12; // Base buffed attack profile
+                    if (this.charData.name === "Metal Sonic") damage = 12; 
                     if (this.form !== "Normal") damage *= 2.0; 
                     p.takeDamage(damage, this.dir);
                 }
@@ -408,16 +423,26 @@ class Fighter {
                 ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
                 ctx.fillStyle = "rgba(255,255,255,0.3)"; ctx.beginPath(); ctx.arc(-4, -4, r/2, 0, Math.PI*2); ctx.fill();
             } else {
-                ctx.beginPath(); ctx.moveTo(-10, -25); ctx.lineTo(-32, -12); ctx.lineTo(-12, -2); ctx.moveTo(-10, -5); ctx.lineTo(-30, 8); ctx.lineTo(-8, 14); ctx.fill();
-                ctx.fillRect(-16, -12, 28, 34); ctx.fillStyle = "#f3d3b2"; ctx.fillRect(-4, -4, 14, 20);
+                // Detailed Hedgehog Spine Drawing Engine Array
+                ctx.beginPath(); 
+                ctx.moveTo(-10, -25); ctx.lineTo(-34, -15); ctx.lineTo(-12, -4); 
+                ctx.moveTo(-10, -5); ctx.lineTo(-32, 6); ctx.lineTo(-8, 14);
+                ctx.moveTo(-12, -15); ctx.lineTo(-36, -3); ctx.lineTo(-10, 5);
+                ctx.fill();
                 
-                // Add mechanical accents to highlight Metal Sonic if matched
+                ctx.fillRect(-16, -12, 28, 34); 
+                
                 if(this.charData.name === "Metal Sonic") {
-                    ctx.fillStyle = "#111111"; ctx.fillRect(-4, -4, 14, 20);
+                    ctx.fillStyle = "#222233"; ctx.fillRect(-4, -4, 14, 20);
+                } else {
+                    ctx.fillStyle = "#f3d3b2"; ctx.fillRect(-4, -4, 14, 20);
                 }
 
                 ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(0, -22, 18, 0, Math.PI * 2); ctx.fill();
                 
+                // Draw ears to define hedgehog silhouette
+                ctx.beginPath(); ctx.moveTo(-12, -36); ctx.lineTo(-20, -48); ctx.lineTo(-2, -38); ctx.fill();
+
                 if (this.charData.name === "Metal Sonic") {
                     ctx.fillStyle = "#ff0000"; ctx.beginPath(); ctx.arc(6, -20, 3, 0, Math.PI * 2); ctx.fill();
                 } else {
@@ -509,15 +534,29 @@ class CampaignBoss {
             ctx.fillStyle = "#ffaa00"; ctx.fillRect(this.x + 30, this.y + 35, this.w - 60, 10);
             ctx.fillStyle = "#ffffff"; ctx.font = "11px monospace"; ctx.fillText("JUMP ATTACK UNDERNEATH ME!", this.x-20, this.y - 10);
         } else {
+            // Enhanced Hedgehog Profile Shape Algorithm for Characters above Level 4
             ctx.translate(this.x + this.w/2, this.y + this.h/2);
             if (this.dir === -1) ctx.scale(-1, 1);
+            
             let bColor = this.type === "KNUCKLES" ? "#ff2222" : this.type === "SHADOW" ? "#222222" : "#0044cc";
             ctx.fillStyle = bColor;
+            
+            // Render Distinct Sonic-Style Hedgehog Back Quills
+            ctx.beginPath();
+            ctx.moveTo(-10, -25); ctx.lineTo(-36, -16); ctx.lineTo(-12, -4);
+            ctx.moveTo(-10, -5); ctx.lineTo(-34, 7); ctx.lineTo(-8, 14);
+            ctx.moveTo(-12, -14); ctx.lineTo(-38, -2); ctx.lineTo(-10, 6);
+            ctx.fill();
+            
             ctx.fillRect(-16, -12, 28, 34);
             ctx.beginPath(); ctx.arc(0, -22, 18, 0, Math.PI * 2); ctx.fill();
             
+            // Top pointed hedgehog ear spikes
+            ctx.beginPath(); ctx.moveTo(-10, -36); ctx.lineTo(-18, -48); ctx.lineTo(-1, -38); ctx.fill();
+            
             if(this.type === "METAL_SONIC") {
-                ctx.fillStyle = "#ff0000"; ctx.beginPath(); ctx.arc(6, -20, 4, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = "#ff0000"; ctx.beginPath(); ctx.arc(6, -21, 4, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = "#111111"; ctx.fillRect(4, -8, 10, 8);
             } else {
                 ctx.fillStyle = "#ffffff"; ctx.fillRect(6, -8, 12, 10); 
             }
@@ -528,7 +567,7 @@ class CampaignBoss {
         ctx.fillStyle = "#ff0044"; 
         ctx.fillRect(350, 50, (this.hp / this.maxHp) * 400, 12);
         ctx.fillStyle = "#ffffff"; ctx.font = "bold 11px monospace"; ctx.textAlign = "center";
-        ctx.fillText(`BOSS: ${this.type}`, 550, 44);
+        ctx.fillText(`BOSS: ${this.type.replace('_', ' ')}`, 550, 44);
     }
 
     takeDamage(amt) {
@@ -616,6 +655,7 @@ function resolveCinematicExit() {
     currentStoryLevel++;
     if (currentStoryLevel > 16) {
         alert("CONGRATULATIONS! You have fully conquered all 16 levels of the Campaign Story Mode!");
+        currentStoryLevel = 1;
         gameState = "MENU";
     } else {
         initStoryLevel();
@@ -625,10 +665,17 @@ function resolveCinematicExit() {
 
 function checkStoryProgress() {
     let aliveBots = players.filter(p => !p.isPlayer && !p.isDead).length;
-    if (aliveBots === 0) {
+    // Enhanced clean fall-through pipeline ensuring state updates resolve accurately
+    if (aliveBots === 0 && !boss) {
         currentStoryLevel++;
-        alert(`LEVEL CLEAR! Advancing to Level ${currentStoryLevel}`);
-        initStoryLevel();
+        if(currentStoryLevel > 16) {
+            alert("CONGRATULATIONS! Campaign Complete!");
+            currentStoryLevel = 1;
+            gameState = "MENU";
+        } else {
+            alert(`LEVEL CLEAR! Advancing to Level ${currentStoryLevel}`);
+            initStoryLevel();
+        }
     }
 }
 
@@ -660,7 +707,7 @@ function initStoryLevel() {
     } else if (currentStoryLevel === 16) {
         boss = new CampaignBoss("METAL_SONIC");
     } else {
-        let minionCount = currentStoryLevel > 12 ? 4 : 3; // Extra badniks for higher tiers
+        let minionCount = currentStoryLevel > 12 ? 4 : 3; 
         for(let i=0; i<minionCount; i++) {
             players.push(new Fighter(Math.random() * 600 + 300, FLOOR_Y - 80, CHARACTERS.BADNIK, false));
         }
