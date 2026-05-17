@@ -167,13 +167,14 @@ setupMobileButton('btnDash', 'q');
 
 // --- CHARACTER METRICS & PROGRESSION LOCKS ---
 const CHARACTERS = {
-    SONIC: { name: "Sonic", baseColor: "#0066ff", superColor: "#ffdd00", speed: 7, jump: -14, maxHp: 100, forms: ["Normal", "Super"], unlocked: true },
-    TAILS: { name: "Tails", baseColor: "#ffaa00", superColor: "#ffdd00", speed: 6.2, jump: -13.5, maxHp: 95, forms: ["Normal"], unlocked: false },
-    KNUCKLES: { name: "Knuckles", baseColor: "#ff2222", superColor: "#ffaaaa", speed: 6.5, jump: -13, maxHp: 120, forms: ["Normal"], unlocked: false },
-    SHADOW: { name: "Shadow", baseColor: "#222222", superColor: "#ffffcc", speed: 7.5, jump: -14.5, maxHp: 110, forms: ["Normal", "Super"], unlocked: false },
-    BADNIK: { name: "Badnik Motobug", baseColor: "#dd2222", superColor: "#dd2222", speed: 4, jump: -10, maxHp: 50, forms: ["Normal"], unlocked: false },
-    HYPER: { name: "Hyper Sonic", baseColor: "#ffffff", superColor: "#ffffff", speed: 10, jump: -17, maxHp: 200, forms: ["Hyper"], unlocked: true },
-    DARK: { name: "Dark Sonic", baseColor: "#0a0a1a", superColor: "#0a0a1a", speed: 9, jump: -15, maxHp: 160, forms: ["Dark"], unlocked: true }
+    SONIC: { name: "Sonic", baseColor: "#0066ff", superColor: "#ffdd00", speed: 7, jump: -20, maxHp: 100, forms: ["Normal", "Super"], unlocked: true },
+    TAILS: { name: "Tails", baseColor: "#ffaa00", superColor: "#ffdd00", speed: 6.2, jump: -19.5, maxHp: 95, forms: ["Normal"], unlocked: false },
+    KNUCKLES: { name: "Knuckles", baseColor: "#ff2222", superColor: "#ffaaaa", speed: 6.5, jump: -19, maxHp: 120, forms: ["Normal"], unlocked: false },
+    SHADOW: { name: "Shadow", baseColor: "#222222", superColor: "#ffffcc", speed: 7.5, jump: -20.5, maxHp: 110, forms: ["Normal", "Super"], unlocked: false },
+    METAL_SONIC: { name: "Metal Sonic", baseColor: "#0044cc", superColor: "#3388ff", speed: 8.5, jump: -22, maxHp: 150, forms: ["Normal", "Overdrive"], unlocked: false },
+    BADNIK: { name: "Badnik Motobug", baseColor: "#dd2222", superColor: "#dd2222", speed: 4, jump: -14, maxHp: 50, forms: ["Normal"], unlocked: false },
+    HYPER: { name: "Hyper Sonic", baseColor: "#ffffff", superColor: "#ffffff", speed: 10, jump: -24, maxHp: 200, forms: ["Hyper"], unlocked: true },
+    DARK: { name: "Dark Sonic", baseColor: "#0a0a1a", superColor: "#0a0a1a", speed: 9, jump: -22, maxHp: 160, forms: ["Dark"], unlocked: true }
 };
 
 let selectedCharacter = CHARACTERS.SONIC;
@@ -195,6 +196,7 @@ function getUnlockedPool() {
     if (CHARACTERS.TAILS.unlocked) pool.push(CHARACTERS.TAILS);
     if (CHARACTERS.KNUCKLES.unlocked) pool.push(CHARACTERS.KNUCKLES);
     if (CHARACTERS.SHADOW.unlocked) pool.push(CHARACTERS.SHADOW);
+    if (CHARACTERS.METAL_SONIC.unlocked) pool.push(CHARACTERS.METAL_SONIC);
     return pool;
 }
 
@@ -256,7 +258,7 @@ class Fighter {
 
         if (this.isPlayer) {
             this.form = currentForm;
-            this.color = (this.form === "Super" || this.form === "Hyper") ? this.charData.superColor : this.charData.baseColor;
+            this.color = (this.form === "Super" || this.form === "Hyper" || this.form === "Overdrive") ? this.charData.superColor : this.charData.baseColor;
         }
 
         this.x = Math.max(0, Math.min(canvas.width - this.w, this.x));
@@ -264,9 +266,9 @@ class Fighter {
         if (this.state === "SPINDASH" && Math.random() < 0.4) {
             particles.push(new Particle(this.x + this.w/2, this.y + this.h, (Math.random()-0.5)*4, -Math.random()*2, "#e69c24", Math.random()*5+2, 15));
         }
-        if (this.form === "Super" || this.form === "Hyper" || this.form === "Dark") {
+        if (this.form === "Super" || this.form === "Hyper" || this.form === "Dark" || this.form === "Overdrive") {
             if(Math.random() < 0.3) {
-                let auraColor = this.form === "Super" ? "rgba(255,230,0,0.5)" : this.form === "Hyper" ? "rgba(255,255,255,0.7)" : "rgba(30,0,60,0.6)";
+                let auraColor = (this.form === "Super" || this.form === "Overdrive") ? "rgba(255,230,0,0.5)" : this.form === "Hyper" ? "rgba(255,255,255,0.7)" : "rgba(30,0,60,0.6)";
                 particles.push(new Particle(this.x + Math.random()*this.w, this.y + Math.random()*this.h, (Math.random()-0.5)*2, -Math.random()*3, auraColor, Math.random()*6+3, 25));
             }
         }
@@ -306,11 +308,9 @@ class Fighter {
         let closest = null; let minDist = 999999;
         
         if (gameMode === "STORY") {
-            // Campaign Mode: Absolute Aggro Lock onto the Human Player
             closest = players[0];
             if (closest) minDist = Math.abs(closest.x - this.x);
         } else {
-            // Free Battleground Mode: Target closest fighter
             players.forEach(p => {
                 if (p !== this && !p.isDead) {
                     let d = Math.abs(p.x - this.x);
@@ -343,18 +343,17 @@ class Fighter {
                 if (distance < reach) {
                     let damage = this.state === "SPINDASH" ? 14 : 8;
                     if (this.charData.name === "Knuckles" && this.state === "PUNCH") damage = 15; 
+                    if (this.charData.name === "Metal Sonic") damage = 12; // Base buffed attack profile
                     if (this.form !== "Normal") damage *= 2.0; 
                     p.takeDamage(damage, this.dir);
                 }
             }
         });
         
-        // Extended Flying Ship Vertical Hitbox for Eggman Boss interactions
         if (boss && !boss.isDead) {
             let pCenterX = this.x + this.w / 2;
             let bCenterX = boss.x + boss.w / 2;
             
-            // Checks proximity while jumping up close into Eggman's undercarriage coordinates
             if (Math.abs(pCenterX - bCenterX) < (boss.w / 2 + 30) && this.y < (boss.y + boss.h + 80)) {
                 let pDmg = this.charData.name === "Knuckles" ? 22 : 12;
                 boss.takeDamage(this.form !== "Normal" ? pDmg * 2 : pDmg);
@@ -393,18 +392,16 @@ class Fighter {
         ctx.translate(this.x + this.w / 2, this.y + this.h / 2);
         if (this.dir === -1) ctx.scale(-1, 1);
 
-        // Render Custom Sonic Badnik Drone graphics natively if assigned
         if (this.charData.name === "Badnik Motobug") {
             ctx.fillStyle = "#cc1122";
-            ctx.fillRect(-18, -10, 36, 26); // Chassis
+            ctx.fillRect(-18, -10, 36, 26); 
             ctx.fillStyle = "#ffee00";
-            ctx.beginPath(); ctx.arc(14, -4, 5, 0, Math.PI*2); ctx.fill(); // Yellow visor headlight
+            ctx.beginPath(); ctx.arc(14, -4, 5, 0, Math.PI*2); ctx.fill(); 
             ctx.fillStyle = "#555555";
-            ctx.beginPath(); ctx.arc(0, 18, 10, 0, Math.PI*2); ctx.fill(); // Steel drive wheel wheel rim
+            ctx.beginPath(); ctx.arc(0, 18, 10, 0, Math.PI*2); ctx.fill(); 
             ctx.fillStyle = "#111111";
             ctx.beginPath(); ctx.arc(0, 18, 5, 0, Math.PI*2); ctx.fill();
         } else {
-            // Standard Fighter render geometry sets
             ctx.fillStyle = this.color;
             if (this.state === "SPINDASH" || this.state === "JUMP") {
                 ctx.beginPath(); let r = 24 + Math.sin(this.animTime * 2) * 2;
@@ -413,9 +410,23 @@ class Fighter {
             } else {
                 ctx.beginPath(); ctx.moveTo(-10, -25); ctx.lineTo(-32, -12); ctx.lineTo(-12, -2); ctx.moveTo(-10, -5); ctx.lineTo(-30, 8); ctx.lineTo(-8, 14); ctx.fill();
                 ctx.fillRect(-16, -12, 28, 34); ctx.fillStyle = "#f3d3b2"; ctx.fillRect(-4, -4, 14, 20);
+                
+                // Add mechanical accents to highlight Metal Sonic if matched
+                if(this.charData.name === "Metal Sonic") {
+                    ctx.fillStyle = "#111111"; ctx.fillRect(-4, -4, 14, 20);
+                }
+
                 ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(0, -22, 18, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = "#f3d3b2"; ctx.fillRect(4, -24, 14, 12); 
+                
+                if (this.charData.name === "Metal Sonic") {
+                    ctx.fillStyle = "#ff0000"; ctx.beginPath(); ctx.arc(6, -20, 3, 0, Math.PI * 2); ctx.fill();
+                } else {
+                    ctx.fillStyle = "#f3d3b2"; ctx.fillRect(4, -24, 14, 12); 
+                }
+
                 ctx.fillStyle = this.charData.name === "Knuckles" ? "#ffffff" : "#e51c23"; 
+                if(this.charData.name === "Metal Sonic") ctx.fillStyle = "#555555";
+
                 let runCycle = (this.state === "RUN") ? Math.sin(this.animTime) * 10 : 0;
                 ctx.fillRect(-18, 22 + runCycle, 16, 12); ctx.fillRect(2, 22 - runCycle, 16, 12);
                 ctx.fillStyle = "#ffffff"; ctx.fillRect(-18, 20 + runCycle, 16, 3); ctx.fillRect(2, 20 - runCycle, 16, 3);
@@ -441,8 +452,8 @@ class CampaignBoss {
         this.w = type === "EGGMAN" ? 120 : 40;
         this.h = type === "EGGMAN" ? 100 : 60;
         this.x = canvas.width / 2 - this.w/2; 
-        this.y = type === "EGGMAN" ? 120 : FLOOR_Y - this.h; // Lowered eggman slightly to maximize hop access windows
-        this.vx = type === "EGGMAN" ? 4.5 : 5.5;
+        this.y = type === "EGGMAN" ? 120 : FLOOR_Y - this.h; 
+        this.vx = type === "EGGMAN" ? 4.5 : type === "METAL_SONIC" ? 7.5 : 5.5;
         this.vy = 0;
         this.dir = 1;
         this.isDead = false;
@@ -452,6 +463,7 @@ class CampaignBoss {
         if (type === "EGGMAN") { this.hp = 500; this.maxHp = 500; }
         else if (type === "KNUCKLES") { this.hp = 650; this.maxHp = 650; }
         else if (type === "SHADOW") { this.hp = 800; this.maxHp = 800; }
+        else if (type === "METAL_SONIC") { this.hp = 1000; this.maxHp = 1000; }
     }
 
     update() {
@@ -469,7 +481,6 @@ class CampaignBoss {
                 this.shootCooldown = 0; spawnBurst(this.x + this.w/2, this.y + this.h, "#ffcc00", 12);
             }
         } else {
-            // Ground Boss Intelligence: Absolute Focus Aggro tracking onto Player[0]
             let target = players[0];
             if (target) {
                 let targetDir = target.x > this.x ? 1 : -1;
@@ -479,7 +490,7 @@ class CampaignBoss {
                 if (Math.abs(target.x - this.x) < 75) {
                     this.shootCooldown++;
                     if(this.shootCooldown > 18) {
-                        let force = this.type === "SHADOW" ? 18 : 24;
+                        let force = this.type === "SHADOW" ? 18 : this.type === "METAL_SONIC" ? 22 : 24;
                         target.takeDamage(force, this.dir);
                         this.shootCooldown = 0;
                     }
@@ -500,11 +511,16 @@ class CampaignBoss {
         } else {
             ctx.translate(this.x + this.w/2, this.y + this.h/2);
             if (this.dir === -1) ctx.scale(-1, 1);
-            let bColor = this.type === "KNUCKLES" ? "#ff2222" : "#222222";
+            let bColor = this.type === "KNUCKLES" ? "#ff2222" : this.type === "SHADOW" ? "#222222" : "#0044cc";
             ctx.fillStyle = bColor;
             ctx.fillRect(-16, -12, 28, 34);
             ctx.beginPath(); ctx.arc(0, -22, 18, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = "#ffffff"; ctx.fillRect(6, -8, 12, 10); 
+            
+            if(this.type === "METAL_SONIC") {
+                ctx.fillStyle = "#ff0000"; ctx.beginPath(); ctx.arc(6, -20, 4, 0, Math.PI * 2); ctx.fill();
+            } else {
+                ctx.fillStyle = "#ffffff"; ctx.fillRect(6, -8, 12, 10); 
+            }
         }
         ctx.restore();
 
@@ -523,7 +539,6 @@ class CampaignBoss {
             boss = null;
             spawnBurst(this.x+this.w/2, this.y+this.h/2, "#ffff00", 40);
             
-            // Set Up Cinematic Cutscene Sequence State Hook parameters 
             activeCinematicType = this.type;
             gameState = "STORY_CINEMATIC";
             cinematicFrameTimer = 0;
@@ -531,7 +546,7 @@ class CampaignBoss {
     }
 }
 
-// --- NEW IMMERSIVE CINEMATIC STORY CRAWLER STATES ---
+// --- IMMERSIVE CINEMATIC STORY CRAWLER STATES ---
 let activeCinematicType = "";
 let cinematicFrameTimer = 0;
 
@@ -539,7 +554,6 @@ function drawStoryCinematicScene() {
     cinematicFrameTimer++;
     ctx.fillStyle = "#02020a"; ctx.fillRect(0,0,canvas.width,canvas.height);
     
-    // Aesthetic bounding letterbox borders 
     ctx.fillStyle = "#000000"; ctx.fillRect(0, 0, canvas.width, 90); ctx.fillRect(0, canvas.height-90, canvas.width, 90);
     ctx.strokeStyle = "#00aaff"; ctx.lineWidth = 2; ctx.strokeRect(0, 90, canvas.width, canvas.height-180);
 
@@ -565,13 +579,23 @@ function drawStoryCinematicScene() {
         ctx.fillStyle = "#ffff00"; ctx.fillText("[ MILESTONE UNLOCKED: KNUCKLES IS NOW PLAYABLE! ]", canvas.width/2, 440);
     } 
     else if (activeCinematicType === "SHADOW") {
-        ctx.fillStyle = "#ffffcc"; ctx.font = "bold 28px Impact"; ctx.fillText("FINAL CHAPTER: THE ULTIMATE ACKNOWLEDGMENT", canvas.width/2, 150);
+        ctx.fillStyle = "#ffffcc"; ctx.font = "bold 28px Impact"; ctx.fillText("CHAPTER 3 COMPLETE: THE ULTIMATE ACKNOWLEDGMENT", canvas.width/2, 150);
         ctx.fillStyle = "#ffffff"; ctx.font = "16px monospace";
         ctx.fillText("Chaos Control sparkles dissolve into thin air as Shadow drops his guard.", canvas.width/2, 230);
         ctx.fillText("The shockwaves of the ultimate speed clash echo across the shattering sanctum.", canvas.width/2, 270);
         ctx.fillStyle = "#aaaaaa"; ctx.font = "bold 18px 'Segoe UI'";
         ctx.fillText("Shadow: 'Your speed... it matches my internal engine capacity. Very well. Let's end his legacy.'", canvas.width/2, 350);
         ctx.fillStyle = "#ffff00"; ctx.fillText("[ MILESTONE UNLOCKED: SHADOW IS NOW PLAYABLE! ]", canvas.width/2, 430);
+    }
+    else if (activeCinematicType === "METAL_SONIC") {
+        ctx.fillStyle = "#33aaee"; ctx.font = "bold 28px Impact"; ctx.fillText("GRAND FINALE: REWRITING THE CODE", canvas.width/2, 150);
+        ctx.fillStyle = "#ffffff"; ctx.font = "16px monospace";
+        ctx.fillText("Metal Sonic's optical sensors flicker wildly as internal circuits overload.", canvas.width/2, 230);
+        ctx.fillText("Instead of detonating, his primary core overrides Eggman's master logic array.", canvas.width/2, 270);
+        ctx.fillText("Standing tall, the hyper-engineered marvel looks at you as an independent rival.", canvas.width/2, 310);
+        ctx.fillStyle = "#44bbff"; ctx.font = "bold 18px 'Segoe UI'";
+        ctx.fillText("System Output: 'ERROR... EGGMAN PROTOCOLS ERASED. FREE WILL INITIALIZED.'", canvas.width/2, 370);
+        ctx.fillStyle = "#ffff00"; ctx.fillText("[ ULTIMATE UNLOCK: METAL SONIC IS NOW PLAYABLE WITH MAXIMUM STRENGTH! ]", canvas.width/2, 440);
     }
 
     ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.font = "12px monospace";
@@ -585,11 +609,13 @@ function resolveCinematicExit() {
         CHARACTERS.KNUCKLES.unlocked = true;
     } else if (activeCinematicType === "SHADOW") {
         CHARACTERS.SHADOW.unlocked = true;
+    } else if (activeCinematicType === "METAL_SONIC") {
+        CHARACTERS.METAL_SONIC.unlocked = true;
     }
     
     currentStoryLevel++;
-    if (currentStoryLevel > 12) {
-        alert("CONGRATULATIONS! You have fully completed the Campaign Story Mode!");
+    if (currentStoryLevel > 16) {
+        alert("CONGRATULATIONS! You have fully conquered all 16 levels of the Campaign Story Mode!");
         gameState = "MENU";
     } else {
         initStoryLevel();
@@ -631,9 +657,10 @@ function initStoryLevel() {
         boss = new CampaignBoss("KNUCKLES");
     } else if (currentStoryLevel === 12) {
         boss = new CampaignBoss("SHADOW");
+    } else if (currentStoryLevel === 16) {
+        boss = new CampaignBoss("METAL_SONIC");
     } else {
-        // Basic Campaign Levels: Spawns Sonic Badnik Motobugs exclusively 
-        let minionCount = 3;
+        let minionCount = currentStoryLevel > 12 ? 4 : 3; // Extra badniks for higher tiers
         for(let i=0; i<minionCount; i++) {
             players.push(new Fighter(Math.random() * 600 + 300, FLOOR_Y - 80, CHARACTERS.BADNIK, false));
         }
@@ -836,7 +863,7 @@ function gameLoop() {
             if(!boss) ctx.fillText(`EGGMAN DROP IN: ${Math.max(0, Math.floor(bossTimer))}s`, canvas.width - 20, 31);
             else ctx.fillText("BOSS CARRIER DETECTED!", canvas.width - 20, 31);
         } else {
-            ctx.fillText(`STORY MODE: LEVEL ${currentStoryLevel} / 12`, 420, 31);
+            ctx.fillText(`STORY MODE: LEVEL ${currentStoryLevel} / 16`, 420, 31);
             ctx.fillStyle = "rgba(255,255,255,0.7)"; ctx.font = "11px monospace"; ctx.textAlign = "right";
             if (boss) ctx.fillText(`BOSS FIGHT ACTIVE - FOCUS FIRE TARGET`, canvas.width - 20, 31);
             else ctx.fillText(`ELIMINATE ALL ROBOTIC BADNIKS`, canvas.width - 20, 31);
