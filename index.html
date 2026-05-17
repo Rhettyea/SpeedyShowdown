@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SpeedyShowdown:Ulimate</title>
+    <title>Sonic Battle Grounds: Ultimate</title>
     <style>
         body {
             margin: 0;
@@ -126,12 +126,17 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// --- GAME STATE ---
+// --- GAME MODE AND CAMPAIGN STATE ---
 let gameState = "MENU"; 
+let gameMode = "BATTLEGROUND"; // "BATTLEGROUND" or "STORY"
+let currentStoryLevel = 1;
+let totalLevelsInWave = 4;
+let storyEnemiesRemaining = 0;
+
 let players = [];
 let particles = [];
 let boss = null;
-let bossTimer = 45; // Tuned boss timer slightly quicker so you can grind out the 7 emeralds faster!
+let bossTimer = 45; 
 let lastTime = Date.now();
 let collectedEmeralds = 0;
 let screenShake = 0;
@@ -144,12 +149,11 @@ const keys = {};
 window.addEventListener('keydown', e => keys[e.key] = true);
 window.addEventListener('keyup', e => keys[e.key] = false);
 
-// --- MOBILE TOUCH HANDLING ---
+// --- MOBILE CONTROLS SYSTEM ---
 const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 if (isMobile) {
     document.getElementById('mobileControls').style.display = 'block';
 }
-
 function setupMobileButton(elementId, keyName) {
     const btn = document.getElementById(elementId);
     btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[keyName] = true; });
@@ -161,33 +165,39 @@ setupMobileButton('btnJump', 'ArrowUp');
 setupMobileButton('btnPunch', 'f');
 setupMobileButton('btnDash', 'q');
 
-// --- CHARACTER STATS ---
+// --- CHARACTER METRICS & PROGRESSION LOCKS ---
 const CHARACTERS = {
-    SONIC: { name: "Sonic", baseColor: "#0066ff", superColor: "#ffdd00", speed: 7, jump: -14, maxHp: 100, forms: ["Normal", "Super"] },
-    TAILS: { name: "Tails", baseColor: "#ffaa00", superColor: "#ffaa00", speed: 6, jump: -13, maxHp: 90, forms: ["Normal"] }, // Tails stays normal but receives golden power spark boosts
-    SHADOW: { name: "Shadow", baseColor: "#222222", superColor: "#ffffcc", speed: 7, jump: -14, maxHp: 105, forms: ["Normal", "Super"] },
-    HYPER: { name: "Hyper Sonic", baseColor: "#ffffff", superColor: "#ffffff", speed: 10, jump: -17, maxHp: 200, forms: ["Hyper"] },
-    DARK: { name: "Dark Sonic", baseColor: "#0a0a1a", superColor: "#0a0a1a", speed: 9, jump: -15, maxHp: 160, forms: ["Dark"] }
+    SONIC: { name: "Sonic", baseColor: "#0066ff", superColor: "#ffdd00", speed: 7, jump: -14, maxHp: 100, forms: ["Normal", "Super"], unlocked: true },
+    TAILS: { name: "Tails", baseColor: "#ffaa00", superColor: "#ffdd00", speed: 6.2, jump: -13.5, maxHp: 95, forms: ["Normal"], unlocked: false },
+    KNUCKLES: { name: "Knuckles", baseColor: "#ff2222", superColor: "#ffaaaa", speed: 6.5, jump: -13, maxHp: 120, forms: ["Normal"], unlocked: false },
+    SHADOW: { name: "Shadow", baseColor: "#222222", superColor: "#ffffcc", speed: 7.5, jump: -14.5, maxHp: 110, forms: ["Normal", "Super"], unlocked: false },
+    // Admin Overlord Tier
+    HYPER: { name: "Hyper Sonic", baseColor: "#ffffff", superColor: "#ffffff", speed: 10, jump: -17, maxHp: 200, forms: ["Hyper"], unlocked: true },
+    DARK: { name: "Dark Sonic", baseColor: "#0a0a1a", superColor: "#0a0a1a", speed: 9, jump: -15, maxHp: 160, forms: ["Dark"], unlocked: true }
 };
 
 let selectedCharacter = CHARACTERS.SONIC;
 let currentForm = "Normal";
-
-// Emerald Color Palette Definition
 const EMERALD_COLORS = ["#ff0000", "#00ff00", "#0000ff", "#ffff00", "#ff00ff", "#00ffff", "#ffffff"];
 
-// --- COMPACT GUI ---
+// --- NAVIGATION MENU BUTTON OBJECTS ---
 const buttons = {
-    play: { x: 425, y: 300, w: 250, h: 50, text: "ENTER BATTLEGROUND" },
-    switchChar: { x: 425, y: 365, w: 250, h: 50, text: "SWITCH CHARACTER" },
-    controls: { x: 425, y: 430, w: 250, h: 50, text: "VIEW CONTROLS" },
-    backToMenu: { x: 15, y: 12, w: 120, h: 32, text: "↩ MENU" },
-    hyperSonic: { x: 320, y: 340, w: 210, h: 60, text: "HYPER SONIC" },
-    darkSonic: { x: 570, y: 340, w: 210, h: 60, text: "DARK SONIC" }
+    play: { x: 425, y: 260, w: 250, h: 48, text: "FREE BATTLEGROUND" },
+    story: { x: 425, y: 320, w: 250, h: 48, text: "STORY CAMPAIGN" },
+    switchChar: { x: 425, y: 380, w: 250, h: 48, text: "SWITCH CHARACTER" },
+    controls: { x: 425, y: 440, w: 250, h: 48, text: "VIEW CONTROLS" },
+    backToMenu: { x: 15, y: 12, w: 120, h: 32, text: "↩ MENU" }
 };
 
-const selectablePool = [CHARACTERS.SONIC, CHARACTERS.TAILS, CHARACTERS.SHADOW];
-let currentSelectIndex = 0;
+// Evaluates currently unlocked pools dynamically 
+function getUnlockedPool() {
+    let pool = [];
+    if (CHARACTERS.SONIC.unlocked) pool.push(CHARACTERS.SONIC);
+    if (CHARACTERS.TAILS.unlocked) pool.push(CHARACTERS.TAILS);
+    if (CHARACTERS.KNUCKLES.unlocked) pool.push(CHARACTERS.KNUCKLES);
+    if (CHARACTERS.SHADOW.unlocked) pool.push(CHARACTERS.SHADOW);
+    return pool;
+}
 
 // --- PARTICLE ENGINE ---
 class Particle {
@@ -203,7 +213,6 @@ class Particle {
         ctx.globalAlpha = 1.0;
     }
 }
-
 function spawnBurst(x, y, color, count=8) {
     for(let i=0; i<count; i++) {
         let angle = Math.random() * Math.PI * 2;
@@ -266,7 +275,7 @@ class Fighter {
 
     handlePlayerInput() {
         let acc = this.charData.speed * 0.18;
-        if (this.form !== "Normal") acc *= 1.4; // Built-in stat transformation upgrade multiplier
+        if (this.form !== "Normal") acc *= 1.4;
 
         if (keys['a'] || keys['ArrowLeft']) {
             this.vx -= acc; this.dir = -1;
@@ -320,31 +329,46 @@ class Fighter {
     }
 
     executeAttack() {
+        let reach = this.charData.name === "Knuckles" ? 75 : 65; // Knuckles unique hit box advantage
         players.forEach(p => {
             if (p !== this && !p.isDead) {
                 let distance = Math.hypot((p.x + p.w/2) - (this.x + this.w/2), (p.y + p.h/2) - (this.y + this.h/2));
-                if (distance < 65) {
+                if (distance < reach) {
                     let damage = this.state === "SPINDASH" ? 14 : 8;
-                    if(this.form !== "Normal") damage *= 2.0; // Devastating Super transformation power buff
+                    if (this.charData.name === "Knuckles" && this.state === "PUNCH") damage = 15; // Knuckles specialized damage multiplier
+                    if (this.form !== "Normal") damage *= 2.0; 
                     p.takeDamage(damage, this.dir);
                 }
             }
         });
         if (boss && !boss.isDead) {
             let distance = Math.hypot((boss.x + boss.w/2) - (this.x + this.w/2), (boss.y + boss.h/2) - (this.y + this.h/2));
-            if (distance < 90) boss.takeDamage(this.form !== "Normal" ? 25 : 12);
+            if (distance < reach + 20) {
+                let pDmg = this.charData.name === "Knuckles" ? 22 : 12;
+                boss.takeDamage(this.form !== "Normal" ? pDmg * 2 : pDmg);
+            }
         }
     }
 
     takeDamage(amt, knockDir) {
-        if (this.isPlayer && this.form !== "Normal" && Math.random() < 0.5) return; // Super form armor shield deflection chance
+        if (this.isPlayer && this.form !== "Normal" && Math.random() < 0.5) return; 
         this.hp -= amt; this.vx += knockDir * 8; this.vy -= 4;
         screenShake = 6;
         spawnBurst(this.x+this.w/2, this.y+this.h/2, "#ff3300", 6);
         if (this.hp <= 0) {
             this.hp = 0; this.isDead = true;
             spawnBurst(this.x+this.w/2, this.y+this.h/2, this.color, 25);
-            setTimeout(() => this.respawn(), 4000);
+            
+            // Story Mode Condition: Player death resets level
+            if (this.isPlayer && gameMode === "STORY") {
+                setTimeout(() => { alert("LEVEL FAILED! Prepare to retry."); initStoryLevel(); }, 1500);
+            } else {
+                setTimeout(() => this.respawn(), 4000);
+            }
+        }
+        // AI Tracking logic for progression checks in Story Mode minions
+        if (!this.isPlayer && this.hp <= 0 && gameMode === "STORY" && !boss) {
+            checkStoryProgress();
         }
     }
 
@@ -369,7 +393,7 @@ class Fighter {
             ctx.fillRect(-16, -12, 28, 34); ctx.fillStyle = "#f3d3b2"; ctx.fillRect(-4, -4, 14, 20);
             ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(0, -22, 18, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = "#f3d3b2"; ctx.fillRect(4, -24, 14, 12); 
-            ctx.fillStyle = "#e51c23"; 
+            ctx.fillStyle = this.charData.name === "Knuckles" ? "#ffffff" : "#e51c23"; // Custom shoe accents
             let runCycle = (this.state === "RUN") ? Math.sin(this.animTime) * 10 : 0;
             ctx.fillRect(-18, 22 + runCycle, 16, 12); ctx.fillRect(2, 22 - runCycle, 16, 12);
             ctx.fillStyle = "#ffffff"; ctx.fillRect(-18, 20 + runCycle, 16, 3); ctx.fillRect(2, 20 - runCycle, 16, 3);
@@ -387,47 +411,165 @@ class Fighter {
     }
 }
 
-// --- EGGMAN BOSS ---
-class EggmanBoss {
-    constructor() {
-        this.x = canvas.width / 2 - 60; this.y = 85; 
-        this.w = 120; this.h = 100; this.hp = 600; this.maxHp = 600; this.vx = 4; this.isDead = false; this.shootCooldown = 0;
+// --- STORY CAMPAIGN AND DYNAMIC BOSSES ---
+class CampaignBoss {
+    constructor(type) {
+        this.type = type; // "EGGMAN", "KNUCKLES", "SHADOW"
+        this.w = type === "EGGMAN" ? 120 : 40;
+        this.h = type === "EGGMAN" ? 100 : 60;
+        this.x = canvas.width / 2 - this.w/2; 
+        this.y = type === "EGGMAN" ? 85 : FLOOR_Y - this.h;
+        this.vx = type === "EGGMAN" ? 4 : 5;
+        this.vy = 0;
+        this.dir = 1;
+        this.isDead = false;
+        this.shootCooldown = 0;
+        this.animTime = 0;
+        
+        // Progressive difficulty health pools metrics
+        if (type === "EGGMAN") { this.hp = 500; this.maxHp = 500; }
+        else if (type === "KNUCKLES") { this.hp = 650; this.maxHp = 650; }
+        else if (type === "SHADOW") { this.hp = 800; this.maxHp = 800; }
     }
+
     update() {
-        this.x += this.vx; if(this.x < 60 || this.x > canvas.width - 180) this.vx *= -1;
-        this.shootCooldown++;
-        if(this.shootCooldown > 45) {
-            players.forEach(p => {
-                if(!p.isDead && Math.abs(p.x - (this.x+this.w/2)) < 150) p.takeDamage(18, p.x > this.x ? 1 : -1);
-            });
-            this.shootCooldown = 0; spawnBurst(this.x + this.w/2, this.y + this.h, "#ffaa00", 12);
+        this.animTime += 0.15;
+        this.x += this.vx;
+        
+        if (this.type === "EGGMAN") {
+            if(this.x < 60 || this.x > canvas.width - 180) this.vx *= -1;
+            this.shootCooldown++;
+            if(this.shootCooldown > 45) {
+                players.forEach(p => {
+                    if(p && p.isPlayer && !p.isDead && Math.abs(p.x - (this.x+this.w/2)) < 160) p.takeDamage(18, p.x > this.x ? 1 : -1);
+                });
+                this.shootCooldown = 0; spawnBurst(this.x + this.w/2, this.y + this.h, "#ffaa00", 12);
+            }
+        } else {
+            // Ground-fighter Boss AI simulation mechanics (Knuckles & Shadow)
+            if(this.x < 50 || this.x > canvas.width - 90) this.vx *= -1;
+            this.dir = this.vx > 0 ? 1 : -1;
+
+            let target = players[0];
+            if (target && !target.isDead && Math.abs(target.x - this.x) < 70) {
+                this.shootCooldown++;
+                if(this.shootCooldown > 20) {
+                    let force = this.type === "SHADOW" ? 16 : 22; // Knuckles hits much harder
+                    target.takeDamage(force, this.dir);
+                    this.shootCooldown = 0;
+                }
+            }
         }
     }
+
     draw() {
-        ctx.save(); ctx.shadowColor = "#ff0044"; ctx.shadowBlur = 15;
-        ctx.fillStyle = "#555566"; ctx.beginPath(); ctx.arc(this.x + this.w/2, this.y + this.h/2, 50, 0, Math.PI, false); ctx.fill();
-        ctx.fillStyle = "#cc1133"; ctx.fillRect(this.x + 20, this.y + 10, this.w - 40, 40);
-        ctx.fillStyle = "#ffaa00"; ctx.fillRect(this.x + 30, this.y + 35, this.w - 60, 10);
+        ctx.save();
+        if (this.type === "EGGMAN") {
+            ctx.shadowColor = "#ff0044"; ctx.shadowBlur = 15;
+            ctx.fillStyle = "#555566"; ctx.beginPath(); ctx.arc(this.x + this.w/2, this.y + this.h/2, 50, 0, Math.PI, false); ctx.fill();
+            ctx.fillStyle = "#cc1133"; ctx.fillRect(this.x + 20, this.y + 10, this.w - 40, 40);
+            ctx.fillStyle = "#ffaa00"; ctx.fillRect(this.x + 30, this.y + 35, this.w - 60, 10);
+        } else {
+            // Render stylized custom opponent character profiles natively
+            ctx.translate(this.x + this.w/2, this.y + this.h/2);
+            if (this.dir === -1) ctx.scale(-1, 1);
+            let bColor = this.type === "KNUCKLES" ? "#ff2222" : "#222222";
+            ctx.fillStyle = bColor;
+            ctx.fillRect(-16, -12, 28, 34);
+            ctx.beginPath(); ctx.arc(0, -22, 18, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "#ffffff"; ctx.fillRect(6, -8, 12, 10); // Boxing gloves / shoes accent tags
+        }
         ctx.restore();
 
-        ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(350, 50, 400, 10);
-        ctx.fillStyle = "#ff0044"; ctx.fillRect(350, 50, (this.hp / this.maxHp) * 400, 10);
+        // Custom Boss Meter Rendering Interface
+        ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(350, 50, 400, 12);
+        ctx.fillStyle = this.type === "KNUCKLES" ? "#ffaa00" : "#ff0044"; 
+        ctx.fillRect(350, 50, (this.hp / this.maxHp) * 400, 12);
+        ctx.fillStyle = "#ffffff"; ctx.font = "bold 11px monospace"; ctx.textAlign = "center";
+        ctx.fillText(`BOSS FIGHT: ${this.type}`, 550, 44);
     }
+
     takeDamage(amt) {
         this.hp -= amt; screenShake = 12;
+        spawnBurst(this.x + this.w/2, this.y + this.h/2, "#ffcc00", 5);
         if (this.hp <= 0) {
             this.isDead = true;
-            collectedEmeralds++;
             boss = null;
             spawnBurst(this.x+this.w/2, this.y+this.h/2, "#ffff00", 40);
+            triggerBossUnlockYield(this.type);
+        }
+    }
+}
 
-            // Check if 7th Emerald collected -> Triggers the cinematic transformation cutscene sequence natively
-            if (collectedEmeralds === 7) {
-                gameState = "SUPER_CUTSCENE";
-                superCutsceneTimer = 0;
-            } else {
-                bossTimer = 45; // Prepare next Carrier deployment trace tracking sequence loop
-            }
+// --- UNLOCK RESOLUTION HANDLING ---
+function triggerBossUnlockYield(type) {
+    if (type === "EGGMAN") {
+        CHARACTERS.TAILS.unlocked = true;
+        alert("EGGMAN DEFEATED! You rescued Tails! [TAILS NOW UNLOCKED]");
+    } else if (type === "KNUCKLES") {
+        CHARACTERS.KNUCKLES.unlocked = true;
+        alert("KNUCKLES BESTED! He breaks free from deception! [KNUCKLES NOW UNLOCKED]");
+    } else if (type === "SHADOW") {
+        CHARACTERS.SHADOW.unlocked = true;
+        alert("SHADOW CONQUERED! The Ultimate Rival acknowledges your speed! [SHADOW NOW UNLOCKED]");
+    }
+    
+    currentStoryLevel++;
+    if (currentStoryLevel > 12) {
+        alert("CONGRATULATIONS! You have completed the Campaign Story Mode!");
+        gameState = "MENU";
+    } else {
+        initStoryLevel();
+    }
+}
+
+function checkStoryProgress() {
+    // Count alive bot fighters remaining
+    let aliveBots = players.filter(p => !p.isPlayer && !p.isDead).length;
+    if (aliveBots === 0) {
+        currentStoryLevel++;
+        alert(`LEVEL CLEAR! Advancing to Level ${currentStoryLevel}`);
+        initStoryLevel();
+    }
+}
+
+// --- SESSION INITIALIZATION SYSTEMS ---
+function initGameSession() {
+    gameMode = "BATTLEGROUND";
+    players = []; particles = []; currentForm = "Normal";
+    players.push(new Fighter(150, FLOOR_Y - 80, selectedCharacter, true));
+    
+    // Exact 4 Ground AI Spawns mapped exclusively from unlocked rosters
+    let activePool = getUnlockedPool();
+    for(let i=0; i<4; i++) {
+        let picked = activePool[Math.floor(Math.random() * activePool.length)];
+        players.push(new Fighter(Math.random() * 800 + 150, FLOOR_Y - 80, picked, false));
+    }
+    boss = null; bossTimer = 45;
+}
+
+function initStoryLevel() {
+    gameMode = "STORY";
+    players = []; particles = []; boss = null;
+    players.push(new Fighter(150, FLOOR_Y - 80, selectedCharacter, true));
+
+    // Evaluate Milestone Boss Triggering Frames
+    if (currentStoryLevel === 4) {
+        boss = new CampaignBoss("EGGMAN");
+    } else if (currentStoryLevel === 8) {
+        boss = new CampaignBoss("KNUCKLES");
+    } else if (currentStoryLevel === 12) {
+        boss = new CampaignBoss("SHADOW");
+    } else {
+        // Standard progression minion count configuration profiles
+        let minionCount = 3;
+        let pool = [CHARACTERS.SONIC];
+        if (CHARACTERS.TAILS.unlocked) pool.push(CHARACTERS.TAILS);
+        if (CHARACTERS.KNUCKLES.unlocked) pool.push(CHARACTERS.KNUCKLES);
+        
+        for(let i=0; i<minionCount; i++) {
+            let enemyChar = pool[Math.floor(Math.random() * pool.length)];
+            players.push(new Fighter(Math.random() * 600 + 300, FLOOR_Y - 80, enemyChar, false));
         }
     }
 }
@@ -436,26 +578,13 @@ class EggmanBoss {
 function checkAdminCode() {
     if (document.getElementById('adminCode').value === "9217") {
         document.getElementById('codeMenu').style.display = 'none';
-        gameState = "CUTSCENE"; cutsceneTimer = 0;
+        gameState = "ADMIN_MENU";
     } else {
-        alert("ACCESS DENIED: INVALID EMERALD EMISSION FREQUENCY.");
+        alert("ACCESS DENIED: INVALID FREQUENCY SPECIFICATION.");
     }
 }
 
-// --- SPARK INITIAL COMBAT GROUND ROUNDS ---
-function initGameSession() {
-    players = []; particles = [];
-    currentForm = "Normal"; // Force restart baseline form checks
-    players.push(new Fighter(150, FLOOR_Y - 80, selectedCharacter, true));
-    let pool = [CHARACTERS.SONIC, CHARACTERS.TAILS, CHARACTERS.SHADOW];
-    for(let i=0; i<4; i++) {
-        let picked = pool[Math.floor(Math.random() * pool.length)];
-        players.push(new Fighter(Math.random() * 800 + 150, FLOOR_Y - 80, picked, false));
-    }
-    boss = null; bossTimer = 45;
-}
-
-// --- GUI BUTTON DRAW CODES ---
+// --- COOL BUTTON GRAPHICS VECTOR GENERATOR ---
 function renderCoolButton(b) {
     let g = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
     g.addColorStop(0, "#112244"); g.addColorStop(1, "#001122");
@@ -466,7 +595,7 @@ function renderCoolButton(b) {
     ctx.fillText(b.text, b.x + b.w/2, b.y + b.h/2);
 }
 
-// --- CLICKS CLICK ENGINE TRIGGER HOOK ---
+// --- CANVAS INTERACTION ROUTINE HANDLERS ---
 canvas.addEventListener('mousedown', handleClicks);
 function handleClicks(e) {
     const r = canvas.getBoundingClientRect();
@@ -476,9 +605,14 @@ function handleClicks(e) {
         if(mx > buttons.play.x && mx < buttons.play.x+buttons.play.w && my > buttons.play.y && my < buttons.play.y+buttons.play.h) {
             collectedEmeralds = 0; initGameSession(); gameState = "PLAYING";
         }
+        if(mx > buttons.story.x && mx < buttons.story.x+buttons.story.w && my > buttons.story.y && my < buttons.story.y+buttons.story.h) {
+            initStoryLevel(); gameState = "PLAYING";
+        }
         if(mx > buttons.switchChar.x && mx < buttons.switchChar.x+buttons.switchChar.w && my > buttons.switchChar.y && my < buttons.switchChar.y+buttons.switchChar.h) {
-            currentSelectIndex = (currentSelectIndex + 1) % selectablePool.length;
-            selectedCharacter = selectablePool[currentSelectIndex];
+            let unlockedPool = getUnlockedPool();
+            let currentIdx = unlockedPool.indexOf(selectedCharacter);
+            let nextIdx = (currentIdx + 1) % unlockedPool.length;
+            selectedCharacter = unlockedPool[nextIdx];
         }
         if(mx > buttons.controls.x && mx < buttons.controls.x+buttons.controls.w && my > buttons.controls.y && my < buttons.controls.y+buttons.controls.h) {
             gameState = "CONTROLS";
@@ -487,22 +621,13 @@ function handleClicks(e) {
         if(mx > buttons.backToMenu.x && mx < buttons.backToMenu.x+buttons.backToMenu.w && my > buttons.backToMenu.y && my < buttons.backToMenu.y+buttons.backToMenu.h) {
             document.getElementById('codeMenu').style.display = 'flex';
             currentForm = "Normal"; 
-            currentSelectIndex = selectablePool.indexOf(selectedCharacter);
-            if(currentSelectIndex === -1) { selectedCharacter = CHARACTERS.SONIC; currentSelectIndex = 0; }
+            let unlockedPool = getUnlockedPool();
+            if(unlockedPool.indexOf(selectedCharacter) === -1) selectedCharacter = CHARACTERS.SONIC;
             gameState = "MENU";
-        }
-        if (gameState === "ADMIN_MENU") {
-            if(mx > buttons.hyperSonic.x && mx < buttons.hyperSonic.x+buttons.hyperSonic.w && my > buttons.hyperSonic.y && my < buttons.hyperSonic.y+buttons.hyperSonic.h) {
-                selectedCharacter = CHARACTERS.HYPER; currentForm = "Hyper"; collectedEmeralds = 7; initGameSession(); gameState = "PLAYING";
-            }
-            if(mx > buttons.darkSonic.x && mx < buttons.darkSonic.x+buttons.darkSonic.w && my > buttons.darkSonic.y && my < buttons.darkSonic.y+buttons.darkSonic.h) {
-                selectedCharacter = CHARACTERS.DARK; currentForm = "Dark"; collectedEmeralds = 7; initGameSession(); gameState = "PLAYING";
-            }
         }
     }
 }
 
-// --- GREEN HILL ENVIRONMENT ---
 function drawGreenHillStage(time) {
     let sky = ctx.createLinearGradient(0,0,0, canvas.height);
     sky.addColorStop(0, "#0044aa"); sky.addColorStop(0.6, "#00aaff"); sky.addColorStop(1, "#88e0ff");
@@ -522,8 +647,7 @@ function drawGreenHillStage(time) {
     for(let x=0; x<canvas.width; x+=30) if(x/30 % 2 === 0) ctx.fillRect(x, FLOOR_Y+16, 15, 10);
 }
 
-// --- MAIN GRAPHICS SYSTEM RECURSION ---
-let cutsceneTimer = 0;
+// --- MAIN GRAPHICS SYSTEM LOOP ---
 let superCutsceneTimer = 0;
 
 function gameLoop() {
@@ -536,11 +660,14 @@ function gameLoop() {
     if (gameState === "MENU") {
         drawGreenHillStage(Date.now()*0.001);
         ctx.fillStyle = "#ffffff"; ctx.font = "italic bold 46px Impact"; ctx.textAlign = "center";
-        ctx.fillText("SONIC BATTLE GROUNDS", canvas.width/2, 140); ctx.fillText("UNLEASHED", canvas.width/2, 195);
-        ctx.fillStyle = "#00ffcc"; ctx.font = "bold 14px monospace";
-        ctx.fillText(`EQUIPPED FIGHTER: ${selectedCharacter.name.toUpperCase()}`, canvas.width/2, 255);
+        ctx.fillText("SONIC BATTLE GROUNDS", canvas.width/2, 115); ctx.fillText("UNLEASHED", canvas.width/2, 165);
+        ctx.fillStyle = "#00ffcc"; ctx.font = "bold 13px monospace";
+        ctx.fillText(`EQUIPPED FIGHTER: ${selectedCharacter.name.toUpperCase()}`, canvas.width/2, 220);
 
-        renderCoolButton(buttons.play); renderCoolButton(buttons.switchChar); renderCoolButton(buttons.controls);
+        renderCoolButton(buttons.play);
+        renderCoolButton(buttons.story);
+        renderCoolButton(buttons.switchChar);
+        renderCoolButton(buttons.controls);
     } 
     else if (gameState === "CONTROLS") {
         drawGreenHillStage(0); ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -551,101 +678,68 @@ function gameLoop() {
         ctx.fillText("W / UP ARROW -> Jump (Engine Gravity Assisted physics)", canvas.width/2, 240);
         ctx.fillText("F KEY -> Strike Melee Punch Jab Combos", canvas.width/2, 280);
         ctx.fillText("Q KEY -> Spin Dash Roll Blitz Charge Attack Mode", canvas.width/2, 320);
-        ctx.fillText("QUEST OBJECTIVE: Defeat Carrier 7 times to invoke Super Transformation!", canvas.width/2, 370);
+        ctx.fillText("STORY REQUIREMENT: Beat Lv. 4 (Tails), Lv. 8 (Knuckles), Lv. 12 (Shadow) to Unlock!", canvas.width/2, 380);
         renderCoolButton(buttons.backToMenu);
-    } 
-    else if (gameState === "CUTSCENE") {
-        cutsceneTimer += 1.5; ctx.fillStyle = "#020208"; ctx.fillRect(0,0,canvas.width,canvas.height);
-        ctx.fillStyle = "#111122"; ctx.fillRect(0, 480, canvas.width, canvas.height - 480);
-        let walkX = cutsceneTimer * 2.5;
-        ctx.fillStyle = "#0066ff"; ctx.fillRect(walkX, 420, 40, 60);
-        ctx.fillStyle = "rgba(255,255,0,0.8)"; ctx.beginPath(); ctx.arc(walkX + 20, 395, 16, 0, Math.PI*2); ctx.stroke();
-        ctx.fillStyle = "#00ffff"; ctx.font = "italic 22px 'Segoe UI'"; ctx.textAlign = "center";
-        ctx.fillText("Sonic crosses the boundary gates into the Admin Sanctum...", canvas.width/2, 180);
-        if(walkX > canvas.width + 50) gameState = "ADMIN_MENU";
     } 
     else if (gameState === "ADMIN_MENU") {
         ctx.fillStyle = "#090014"; ctx.fillRect(0,0,canvas.width,canvas.height);
-        ctx.fillStyle = "#ff00bb"; ctx.font = "bold 32px Impact"; ctx.textAlign = "center";
-        ctx.fillText("THE ANCIENT SANCTUM OF INTEL DEVELOPMENT", canvas.width/2, 140);
-        renderCoolButton(buttons.hyperSonic); renderCoolButton(buttons.darkSonic); renderCoolButton(buttons.backToMenu);
+        ctx.fillStyle = "#ff00bb"; ctx.font = "bold 26px Impact"; ctx.textAlign = "center";
+        ctx.fillText("ADMIN SANCTUM CHARACTER ACTIVATION", canvas.width/2, 180);
+        ctx.fillStyle = "#ffffff"; ctx.font = "14px monospace";
+        ctx.fillText("Click character button below to forcefully override current frame sets:", canvas.width/2, 240);
+        
+        // Custom Admin selectors inline
+        let btnHyper = { x: 320, y: 320, w: 210, h: 50, text: "HYPER SONIC" };
+        let btnDark = { x: 570, y: 320, w: 210, h: 50, text: "DARK SONIC" };
+        renderCoolButton(btnHyper); renderCoolButton(btnDark);
+        renderCoolButton(buttons.backToMenu);
+
+        canvas.onclick = (e) => {
+            const r = canvas.getBoundingClientRect();
+            const mx = e.clientX - r.left; const my = e.clientY - r.top;
+            if(mx > btnHyper.x && mx < btnHyper.x+btnHyper.w && my > btnHyper.y && my < btnHyper.y+btnHyper.h) {
+                selectedCharacter = CHARACTERS.HYPER; currentForm = "Hyper"; initGameSession(); gameState = "PLAYING";
+            }
+            if(mx > btnDark.x && mx < btnDark.x+btnDark.w && my > btnDark.y && my < btnDark.y+btnDark.h) {
+                selectedCharacter = CHARACTERS.DARK; currentForm = "Dark"; initGameSession(); gameState = "PLAYING";
+            }
+        };
     } 
-    
-    // --- BRAND NEW SEVEN CHAOS EMERALDS TRANSFORMING CUTSCENE ---
     else if (gameState === "SUPER_CUTSCENE") {
         superCutsceneTimer += 1;
-        
-        // Draw space portal grid backdrop environment smoothly scaling
         ctx.fillStyle = "#000310"; ctx.fillRect(0,0,canvas.width,canvas.height);
-        
-        let centerX = canvas.width / 2;
-        let centerY = canvas.height / 2 - 30;
-        
-        // Stage 1: Player character floats gently into mid-air center axis
+        let centerX = canvas.width / 2; let centerY = canvas.height / 2 - 30;
         let floatY = centerY + Math.sin(superCutsceneTimer * 0.05) * 10;
         
-        // Draw floating procedural model setup inside cinematic chamber
-        ctx.save();
-        ctx.translate(centerX, floatY);
-        ctx.fillStyle = selectedCharacter.baseColor;
-        // Float pose head spikes
-        ctx.beginPath(); ctx.moveTo(-10, -25); ctx.lineTo(-32, -12); ctx.lineTo(-12, -2); ctx.moveTo(-10, -5); ctx.lineTo(-30, 8); ctx.lineTo(-8, 14); ctx.fill();
-        ctx.fillRect(-16, -12, 28, 34); ctx.fillStyle = "#f3d3b2"; ctx.fillRect(-4, -4, 14, 20);
-        ctx.fillStyle = selectedCharacter.baseColor; ctx.beginPath(); ctx.arc(0, -22, 18, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = "#f3d3b2"; ctx.fillRect(4, -24, 14, 12);
-        ctx.fillStyle = "#e51c23"; ctx.fillRect(-18, 22, 16, 12); ctx.fillRect(2, 22, 16, 12);
-        ctx.restore();
+        ctx.save(); ctx.translate(centerX, floatY); ctx.fillStyle = selectedCharacter.baseColor;
+        ctx.beginPath(); ctx.moveTo(-10, -25); ctx.lineTo(-32, -12); ctx.lineTo(-12, -2); ctx.fill();
+        ctx.fillRect(-16, -12, 28, 34); ctx.beginPath(); ctx.arc(0, -22, 18, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#e51c23"; ctx.fillRect(-18, 22, 16, 12); ctx.fillRect(2, 22, 16, 12); ctx.restore();
 
-        // Stage 2: Spawning and orbiting the 7 Chaos Emerald gems natively
-        let orbitRadius = 160 - (superCutsceneTimer * 0.6); // Spiral inwards continuously over time frames
-        if (orbitRadius < 5) orbitRadius = 0; 
-        
+        let orbitRadius = 160 - (superCutsceneTimer * 0.6); if (orbitRadius < 5) orbitRadius = 0; 
         let orbitSpeed = superCutsceneTimer * 0.07;
-
         for(let i=0; i<7; i++) {
             let angle = (i * (Math.PI * 2) / 7) + orbitSpeed;
-            let gemX = centerX + Math.cos(angle) * orbitRadius;
-            let gemY = floatY + Math.sin(angle) * orbitRadius;
-
-            ctx.save();
-            ctx.fillStyle = EMERALD_COLORS[i];
-            ctx.shadowColor = EMERALD_COLORS[i]; ctx.shadowBlur = 15;
-            // Rhombus diamond canvas geometry rendering vectors natively
-            ctx.beginPath();
-            ctx.moveTo(gemX, gemY - 12);
-            ctx.lineTo(gemX + 9, gemY);
-            ctx.lineTo(gemX, gemY + 12);
-            ctx.lineTo(gemX - 9, gemY);
-            ctx.closePath();
-            ctx.fill();
-            ctx.restore();
+            let gemX = centerX + Math.cos(angle) * orbitRadius; let gemY = floatY + Math.sin(angle) * orbitRadius;
+            ctx.save(); ctx.fillStyle = EMERALD_COLORS[i]; ctx.shadowColor = EMERALD_COLORS[i]; ctx.shadowBlur = 15;
+            ctx.beginPath(); ctx.moveTo(gemX, gemY - 12); ctx.lineTo(gemX + 9, gemY); ctx.lineTo(gemX, gemY + 12); ctx.lineTo(gemX - 9, gemY); ctx.closePath(); ctx.fill(); ctx.restore();
         }
-
-        // Cinematic structural text overlay indicators
-        ctx.fillStyle = "#ffff00"; ctx.font = "italic bold 24px Impact"; ctx.textAlign = "center";
-        ctx.fillText("ALL 7 CHAOS EMERALDS ASSEMBLED!", canvas.width/2, 100);
-
-        // Stage 3: Collision triggers and screen turns absolute white flash
         if (superCutsceneTimer > 240) {
-            let flashAlpha = (300 - superCutsceneTimer) / 60;
-            ctx.fillStyle = `rgba(255,255,255,${superCutsceneTimer >= 265 ? 1.0 : 1.0 - flashAlpha})`;
-            ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.fillStyle = `rgba(255,255,255,${superCutsceneTimer >= 265 ? 1.0 : (superCutsceneTimer-240)/25})`; ctx.fillRect(0,0,canvas.width,canvas.height);
         }
-
-        // Cutscene finish wrap transition logic metrics
         if (superCutsceneTimer >= 290) {
-            currentForm = "Super"; 
-            players[0].form = "Super";
-            players[0].maxHp = 250; // Massively upgraded survival health pool parameters
-            players[0].hp = 250;
-            gameState = "PLAYING";
-            bossTimer = 60; // Safe return gap buffer
+            currentForm = "Super"; players[0].form = "Super"; players[0].maxHp = 250; players[0].hp = 250;
+            gameState = "PLAYING"; bossTimer = 60;
         }
     } 
-    
     else if (gameState === "PLAYING") {
-        bossTimer -= dt;
-        if(bossTimer <= 0 && !boss) boss = new EggmanBoss();
+        if (gameMode === "BATTLEGROUND") {
+            bossTimer -= dt;
+            if(bossTimer <= 0 && !boss) {
+                boss = new CampaignBoss("EGGMAN");
+                boss.hp = 600; boss.maxHp = 600; // Standalone Battleground boss buff adjustment
+            }
+        }
 
         drawGreenHillStage(Date.now()*0.001);
         if (boss) { boss.update(); boss.draw(); }
@@ -656,7 +750,7 @@ function gameLoop() {
             if(particles[i].life <= 0) particles.splice(i, 1);
         }
 
-        // --- TOP BAR HUD ---
+        // --- TOP BAR HUD OVERLAY ---
         ctx.fillStyle = "rgba(0, 0, 15, 0.6)"; ctx.fillRect(0, 0, canvas.width, 52);
         ctx.strokeStyle = "rgba(0, 170, 255, 0.3)"; ctx.lineWidth = 1; ctx.strokeRect(0, 0, canvas.width, 52);
         renderCoolButton(buttons.backToMenu);
@@ -664,19 +758,20 @@ function gameLoop() {
         ctx.fillStyle = "#ffffff"; ctx.font = "bold 12px monospace"; ctx.textAlign = "left";
         ctx.fillText(`FIGHTER: ${selectedCharacter.name} [${currentForm}]`, 155, 31);
         
-        // Dynamic HUD indicators illustrating active emerald statuses
         ctx.fillStyle = "#ffff00";
-        ctx.fillText(`CHAOS EMERALDS: ${collectedEmeralds} / 7`, 420, 31);
-
-        // Small indicator track showing mini-colored square shards on HUD for gathered emerald items
-        for(let g=0; g<collectedEmeralds; g++) {
-            ctx.fillStyle = EMERALD_COLORS[g];
-            ctx.fillRect(575 + (g * 14), 21, 9, 11);
+        if (gameMode === "BATTLEGROUND") {
+            ctx.fillText(`CHAOS EMERALDS: ${collectedEmeralds} / 7`, 420, 31);
+            for(let g=0; g<collectedEmeralds; g++) { ctx.fillStyle = EMERALD_COLORS[g]; ctx.fillRect(575 + (g * 14), 21, 9, 11); }
+            ctx.fillStyle = "rgba(255,255,255,0.7)"; ctx.font = "11px monospace"; ctx.textAlign = "right";
+            if(!boss) ctx.fillText(`EGGMAN DROP IN: ${Math.max(0, Math.floor(bossTimer))}s`, canvas.width - 20, 31);
+            else ctx.fillText("BOSS CARRIER DETECTED!", canvas.width - 20, 31);
+        } else {
+            // Story Mode progress telemetry readout layout
+            ctx.fillText(`STORY MODE: LEVEL ${currentStoryLevel} / 12`, 420, 31);
+            ctx.fillStyle = "rgba(255,255,255,0.7)"; ctx.font = "11px monospace"; ctx.textAlign = "right";
+            if (boss) ctx.fillText(`BOSS WARNING INSTRUCTIONS ACTIVE`, canvas.width - 20, 31);
+            else ctx.fillText(`ELIMINATE REMAINING ENEMY BOT TARGETS`, canvas.width - 20, 31);
         }
-
-        ctx.fillStyle = "rgba(255,255,255,0.7)"; ctx.font = "11px monospace"; ctx.textAlign = "right";
-        if(!boss) ctx.fillText(`EGGMAN DROP IN: ${Math.max(0, Math.floor(bossTimer))}s`, canvas.width - 20, 31);
-        else ctx.fillText("BOSS CARRIER DETECTED!", canvas.width - 20, 31);
     }
 
     ctx.restore();
